@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "908421990166",
+    "project_id": "smartvigie-66644",
+    "storage_bucket": "smartvigie-66644.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:908421990166:android:59b40c9f50749fe741f237",
+        "android_client_info": {
+          "package_name": "com.example.firstone"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDA-oLGEq7VVQXHEXwxlZxHRfO_HtXiw20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:908421990166:android:1e9aaf129f325dc741f237",
+        "android_client_info": {
+          "package_name": "com.example.smart_vigie"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDA-oLGEq7VVQXHEXwxlZxHRfO_HtXiw20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
