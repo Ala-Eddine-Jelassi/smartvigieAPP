@@ -9,7 +9,7 @@ import 'package:smart_vigie/pages/alarmpage.dart';
 import 'package:smart_vigie/pages/datahistorypage.dart';
 import 'package:smart_vigie/pages/sensortemperaturepage.dart';
 import 'package:smart_vigie/utils/Appcolors.dart';
-import 'package:smart_vigie/pages/admin_management.dart';
+
 import 'message_screen.dart';
 import 'package:smart_vigie/mqtt/mqtt.dart';
 import 'dart:async';
@@ -810,12 +810,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
             if (_isAdmin)
               ElevatedButton(
                 onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AdminManagementPage(),
-                    ),
-                  );
+
                 },
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),

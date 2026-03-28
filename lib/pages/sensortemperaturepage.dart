@@ -1,8 +1,10 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_vigie/firebase/database_services.dart';
+import 'package:smart_vigie/utils/Appcolors.dart';
 import 'package:syncfusion_flutter_gauges/gauges.dart';
 import 'package:smart_vigie/mqtt/mqtt.dart';
-
+import 'dart:convert';
 class sensorTemperaturepage extends StatefulWidget {
   final MQTTClientWrapper mqttClient;
   final String topic;
@@ -21,23 +23,41 @@ class sensorTemperaturepage extends StatefulWidget {
 }
 class _sensorTemperaturepageState extends State<sensorTemperaturepage> {
 
-  // List to store message history with client ID and type
   List<Map<String, String>> messages = [];
   final _dbservices = DatabaseServices();
-
+  double?  temperature  ;
+  int?  humidity ;
+  String?  timestamp ;
   @override
   void initState() {
     super.initState();
-    // Subscribe to the topic and handle incoming messages with client ID
     widget.mqttClient.subscribe(widget.topic, (clientId, message) {
       setState(() {
-        // Add received message with publisher's client ID to history
         messages.insert(0, {
           'type': 'received',
-          //'clientId': clientId,
+          'clientId': clientId,
           'message': message,
         });
-        _dbservices.updateValues(message, message);
+        try {
+
+          Map<String, dynamic> jsonData = jsonDecode(clientId+":"+message);
+          double temp = jsonData['temperature'];
+          int humid = jsonData['humidity'];
+          String  timest = jsonData['timestamp'];
+          _dbservices.updateValues(temp,humid,timest);
+          final jsonvalues = _dbservices.readValues();
+
+            temperature = temp;
+            humidity = humid;
+            timestamp = timest;
+
+          //  print('Name: $temperature');
+          //   print('Age: $humidity');
+          //  print('Active: $timest');
+        } catch (e) {
+          //  print('Error parsing JSON: $e');
+        }
+
 
 
       });
@@ -48,7 +68,7 @@ class _sensorTemperaturepageState extends State<sensorTemperaturepage> {
 
   @override
   void dispose() {
-    // Clean up resources
+
     widget.mqttClient.unsubscribe();
     super.dispose();
   }
@@ -108,62 +128,13 @@ class _sensorTemperaturepageState extends State<sensorTemperaturepage> {
               ],
             ),
           ),
-          // Message list
-          Expanded(
-            child: ListView.builder(
-              reverse: true, // Newest messages at the bottom
-              itemCount: messages.length,
-              itemBuilder: (context, index) {
-                final message = messages[index];
-                final isSent = message['type'] == 'sent';
-                return Card(
-                  margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  elevation: 2,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  color: isSent ? Colors.blue[50] : Colors.grey[100],
-                  child: ListTile(
-                    contentPadding: EdgeInsets.all(16),
-                    title: Text(
-                      '${message['message']!}',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: isSent ? Colors.blue[800] : Colors.black87,
-                      ),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        SizedBox(height: 4),
-                        Text(
-                          'Publisher Client ID: ${message['clientId']}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          DateTime.now().toString().split('.')[0],
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                    leading: Icon(
-                      isSent ? Icons.arrow_upward : Icons.arrow_downward,
-                      color: isSent ? Colors.blue[600] : Colors.grey[600],
-                    ),
-                  ),
-                );
-              },
-            ),
+          Row(
+            children: [
+
+            ],
           ),
-          // Message input and send button
+          buildTemperatureguage()
+
 
         ],
 
@@ -175,32 +146,38 @@ class _sensorTemperaturepageState extends State<sensorTemperaturepage> {
   Widget buildTemperatureguage(){
     return
       Container(
-          padding: EdgeInsets.all(8.0),
-          margin: EdgeInsets.all(8.0),
+          padding: EdgeInsets.all(12.0),
+          margin: EdgeInsets.all(12.0),
 
           width: MediaQuery.of(context).size.width,
-          height: 300,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.all(Radius.circular(18)),
-            color: Colors.grey,
+            color: Appcolors.backgroundColor,
           ),
-          child :  SfRadialGauge(
-            axes: <RadialAxis>[
-              RadialAxis(
-                ranges:<GaugeRange> [
-                  GaugeRange(startValue: 0, endValue: 30, color: Colors.amber),
-                  GaugeRange(startValue: 30, endValue: 60, color: Colors.green),
-                  GaugeRange(startValue: 60, endValue: 100, color: Colors.red)
+          child :  Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text("Zone ",style: TextStyle(fontSize: 40,color: Appcolors.primaryColor,fontWeight: FontWeight.bold),),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Icon(Icons.device_thermostat,size: 45,color: Colors.red,),
+                  Text("${temperature} °C",style: TextStyle(fontSize: 40,color: Appcolors.primaryColor,fontWeight: FontWeight.bold),)
                 ],
-                minimum: 0,
-                maximum: 100,
-                pointers:<GaugePointer> [
-                  NeedlePointer(value: 20, enableAnimation: true,)
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  Icon(Icons.water_drop,size: 45,color: Appcolors.primaryColor,),
+                  Text("${humidity}%",style: TextStyle(fontSize: 40,color: Appcolors.primaryColor,fontWeight: FontWeight.bold),)
                 ],
-                annotations: <GaugeAnnotation>[
-                  GaugeAnnotation(widget: Text('20 °C',style: TextStyle(fontSize:20,color: Colors.black,fontWeight: FontWeight.bold)),angle: 90,positionFactor: 0.75),
-                  GaugeAnnotation(widget: Text('{messages[0]["message"]}',style: TextStyle(fontSize:20,color: Colors.black,fontWeight: FontWeight.bold)),angle: 90,positionFactor: 0.5,),
-
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Icon(Icons.access_time,size: 45,color: Colors.grey,),
+                  Text(" ${timestamp.toString()} ",style: TextStyle(fontSize: 40,color: Appcolors.primaryColor,fontWeight: FontWeight.bold),)
                 ],
               )
             ],

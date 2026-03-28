@@ -1,5 +1,4 @@
 import 'dart:developer';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:smart_vigie/mqtt/mqtt_firestore_parameters.dart';
@@ -44,13 +43,20 @@ class DatabaseServices {
     }
 
   }
-  updateValues(temperature,timestamp)async{
-    await _firestore.collection("TemperatureValues").doc('ds18b20').update(
+  updateValues(temperature,humidity , timestamp)async{
+    await _firestore.collection("""
+Read Sensor""").doc('AHT21B').update(
         {
-          "Temperature":temperature,
-          "Timestamp":timestamp,
+          "temperature":temperature,
+          "humidty": humidity ,
+          "timestamp":timestamp,
         }
     );
+  }
+  readValues() async {
+    final values =  await _firestore.collection("Read Sensor").doc("AHT21B").get();
+    print(values.data()!);
+    return values.data()! ;
   }
   Future<bool> save(MqttFirestoreParameters config) async {
     try {

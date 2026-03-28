@@ -11,7 +11,12 @@ class temperaturechart extends StatefulWidget {
 class _temperaturechartState extends State<temperaturechart> {
   @override
   Widget build(BuildContext context) {
-    return SafeArea(child: Text("Temperature chart")
+    return SafeArea(
+      child: Column(
+        children : [
+          Text("Temperature chart")
+        ]
+      )
 
     );
   }
