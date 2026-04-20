@@ -18,7 +18,7 @@ class _alarmpageState extends State<alarmpage> {
   bool _led = false ;
 
   void publish(String topic , bool status){
-    widget.mqttClient.publishToTopic( "led ${status}",topic );
+    widget.mqttClient.publishToTopic("led ${status}",topic );
 
   }
 
@@ -32,7 +32,7 @@ class _alarmpageState extends State<alarmpage> {
             title: Text("ON/OFF LED"),
             value: _led,
             onChanged: (value) {
-              publish("KitchenLight", value);
+              publish("Setalarm/manu",value);
               setState(() {
                 _led = value;
               });

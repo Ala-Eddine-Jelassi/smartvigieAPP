@@ -42,6 +42,9 @@ dependencies:
   syncfusion_flutter_gauges: ^32.2.5
   cloud_firestore:
   device_preview: ^1.1.0
+  path_provider: ^2.1.0
+  share_plus: ^7.2.0
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:

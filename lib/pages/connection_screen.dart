@@ -9,8 +9,7 @@ import 'package:smart_vigie/pages/alarmpage.dart';
 import 'package:smart_vigie/pages/datahistorypage.dart';
 import 'package:smart_vigie/pages/sensortemperaturepage.dart';
 import 'package:smart_vigie/utils/Appcolors.dart';
-
-import 'message_screen.dart';
+import 'package:smart_vigie/widgets/rangeWidget.dart';
 import 'package:smart_vigie/mqtt/mqtt.dart';
 import 'dart:async';
 
@@ -22,31 +21,32 @@ class ConnectionScreen extends StatefulWidget {
 class _ConnectionScreenState extends State<ConnectionScreen> with TickerProviderStateMixin {
   final _dbservices = DatabaseServices();
   MqttFirestoreParameters? _config;
-  bool _isAdmin = false;
   bool _showpass = true;
-  bool _hasShownWelcomeDialog = false; // Track if welcome dialog was shown
+  bool _hasShownWelcomeDialog = false;
 
-  final _brokerController = TextEditingController();
-  final _clientIdController = TextEditingController();
-  final _mqttUsernameController = TextEditingController();
-  final _mqttPasswordController = TextEditingController();
+  // Default values with admin credentials
+  final _brokerController = TextEditingController(text: 'broker.hivemq.com');
+  final _clientIdController = TextEditingController(text: 'flutter_client_${DateTime.now().millisecondsSinceEpoch}');
+  final _mqttUsernameController = TextEditingController(text: "admin");
+  final _mqttPasswordController = TextEditingController(text: "Sergioala10.");
 
   final MQTTClientWrapper _mqttClient = MQTTClientWrapper();
 
   bool _isConnecting = false;
   bool _isConnected = false;
-  bool _useSSL = true;
+  bool _useSSL = false; // Set to false for public broker
   String _statusMessage = 'Initializing...';
   bool _isInitializing = true;
 
   final user = FirebaseAuth.instance.currentUser;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   int _currentindex = 0;
-  PageController _pageviewcontroller = PageController();
+  late PageController _pageviewcontroller;
 
   @override
   void initState() {
     super.initState();
+    _pageviewcontroller = PageController();
     _initializeApp();
   }
 
@@ -55,24 +55,15 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
       _statusMessage = 'Loading MQTT parameters from Firestore...';
     });
 
-    // Check if user is admin
-    _checkAdminStatus();
-
-    // Load parameters from Firestore
     await loadParameters();
-
-    // Show welcome dialog for all users after loading
-    _showWelcomeDialog();
 
     setState(() {
       _isInitializing = false;
     });
   }
 
-  void _showWelcomeDialog() {
-    // Prevent showing multiple times
-    if (_hasShownWelcomeDialog) return;
-
+  // Show dialog for login result
+  void _showLoginResultDialog({required bool success, String? errorMessage}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       showDialog(
         context: context,
@@ -81,11 +72,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
           title: Row(
             children: [
               Icon(
-                _isAdmin ? Icons.admin_panel_settings : Icons.person,
-                color: _isAdmin ? Colors.orange : Colors.blue,
+                success ? Icons.check_circle : Icons.error,
+                color: success ? Colors.green : Colors.red,
+                size: 30,
               ),
               const SizedBox(width: 10),
-              Text('Welcome ${user?.email?.split('@')[0] ?? 'User'}!'),
+              Text(success ? 'Login Successful!' : 'Login Failed'),
             ],
           ),
           content: Column(
@@ -93,63 +85,123 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _isAdmin
-                    ? 'You have logged in as an ADMIN user.'
-                    : 'You have logged in as a STANDARD user.',
+                success 
+                    ? 'You have successfully logged in as ${user?.email?.split('@')[0] ?? 'User'}.'
+                    : 'Failed to login. Please check your credentials.',
                 style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: _isAdmin ? Colors.orange : Colors.blue,
+                  fontSize: 14,
+                  color: success ? Colors.green.shade700 : Colors.red.shade700,
                 ),
               ),
               const SizedBox(height: 10),
-              if (_isAdmin) ...[
-                const Text('• You can configure MQTT settings'),
-                const Text('• You can manage other admins'),
-                const Text('• You can view all data'),
-              ] else ...[
+              if (success) ...[
+                const Text('• MQTT parameters are now accessible'),
+                const Text('• You can configure the broker settings'),
                 const Text('• You can view real-time sensor data'),
-                const Text('• You can view temperature charts'),
-                const Text('• You can view data history'),
-                const Text('• MQTT settings are read-only'),
               ],
-              const SizedBox(height: 15),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _isConnected ? Colors.green.shade50 : Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(8),
+              if (!success && errorMessage != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Error: $errorMessage',
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                  ),
                 ),
-                child: Row(
-                  children: [
-                    Icon(
-                      _isConnected ? Icons.check_circle : Icons.wifi,
-                      color: _isConnected ? Colors.green : Colors.orange,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _isConnected
-                            ? 'MQTT Broker: Connected ✅'
-                            : 'MQTT Broker: Connecting...',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _isConnected ? Colors.green.shade800 : Colors.orange.shade800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ],
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(context);
-                _hasShownWelcomeDialog = true;
               },
-              child: const Text('Got it'),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  // Show connection result dialog
+  void _showConnectionResultDialog({required bool success, String? errorMessage}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                success ? Icons.wifi : Icons.wifi_off,
+                color: success ? Colors.green : Colors.red,
+                size: 30,
+              ),
+              const SizedBox(width: 10),
+              Text(success ? 'MQTT Connected!' : 'Connection Failed'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                success 
+                    ? 'Successfully connected to MQTT broker: ${_brokerController.text}'
+                    : 'Failed to connect to MQTT broker: ${_brokerController.text}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: success ? Colors.green.shade700 : Colors.red.shade700,
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (!success && errorMessage != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Error: $errorMessage',
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                  ),
+                ),
+              ],
+              if (success) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info, size: 16, color: Colors.green.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'You are now subscribed to sensor topics and will receive real-time data.',
+                          style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('OK'),
             ),
           ],
         ),
@@ -163,29 +215,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
       setState(() {
         _config = config;
 
-        // Update text fields with loaded config
         if (_config != null) {
           _brokerController.text = _config!.brokerUrl;
           _clientIdController.text = _config!.clientid;
-          _mqttUsernameController.text = _config!.username;
-          _mqttPasswordController.text = _config!.password;
+          _mqttUsernameController.text = _config!.username ?? 'admin';
+          _mqttPasswordController.text = _config!.password ?? 'Sergioala10.';
           _statusMessage = '✅ Parameters loaded from Firestore';
-
-          // Auto-connect for ALL users
-          print('Auto-connecting with loaded parameters...');
+          
+          // Auto-connect with loaded parameters
           _autoConnect();
         } else {
-          // Set default values for first time setup
-          _brokerController.text = 'broker.hivemq.com';
-          _clientIdController.text = 'flutter_${DateTime.now().millisecondsSinceEpoch}';
-          _mqttUsernameController.text = '';
-          _mqttPasswordController.text = '';
-          _statusMessage = '⚠️ No saved parameters found.';
-
-          // Only show config dialog for admin on first time
-          if (_isAdmin) {
-            _showFirstTimeConfigDialog();
-          }
+          _statusMessage = '⚠️ No saved parameters found. Using default values.';
         }
       });
     } catch (e) {
@@ -194,47 +234,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
         _statusMessage = '❌ Error loading parameters: $e';
       });
     }
-  }
-
-  void _checkAdminStatus() {
-    // Check if current user is admin
-    if (user?.email == 'alajlassi624@gmail.com') {
-      setState(() {
-        _isAdmin = true;
-        _statusMessage = '✅ Admin user. You can configure MQTT settings.';
-      });
-      print('Admin user logged in: ${user?.email}');
-    } else {
-      setState(() {
-        _isAdmin = false;
-        _statusMessage = '👤 Standard user. MQTT settings are read-only.';
-      });
-      print('Standard user logged in: ${user?.email}');
-    }
-  }
-
-  void _showFirstTimeConfigDialog() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text('First Time Setup'),
-          content: const Text(
-            'No MQTT configuration found. Please configure the broker settings in the drawer menu.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _scaffoldKey.currentState?.openDrawer();
-              },
-              child: const Text('Configure Now'),
-            ),
-          ],
-        ),
-      );
-    });
   }
 
   Future<void> _autoConnect() async {
@@ -250,16 +249,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
       _statusMessage = 'Auto-connecting to ${_config!.brokerUrl}...';
     });
 
-    print('Auto-connecting with:');
-    print('Broker: ${_config!.brokerUrl}');
-    print('Client ID: ${_config!.clientid}');
-    print('Username: ${_config!.username}');
-
     await _connectToBroker(
       _config!.brokerUrl,
       _config!.clientid,
-      _config!.username,
-      _config!.password,
+      _config!.username ?? 'admin',
+      _config!.password ?? 'Sergioala10.',
     );
 
     setState(() {
@@ -268,13 +262,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
   }
 
   Future<void> _saveParametersToFirestore() async {
-    if (!_isAdmin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Only admin can save parameters!')),
-      );
-      return;
-    }
-
     try {
       await _dbservices.update(
         _brokerController.text,
@@ -283,7 +270,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
         _clientIdController.text,
       );
 
-      // Update the local _config after saving
       setState(() {
         _config = MqttFirestoreParameters(
           brokerUrl: _brokerController.text,
@@ -312,7 +298,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
     });
 
     try {
-      // Disconnect if already connected
       if (_mqttClient.isConnected) {
         _mqttClient.disconnect();
         await Future.delayed(const Duration(milliseconds: 100));
@@ -338,6 +323,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
       });
 
       if (_isConnected) {
+        // Show success dialog
+        _showConnectionResultDialog(success: true);
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('MQTT Connected to $brokerUrl!')),
         );
@@ -346,6 +334,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
         _mqttClient.subscribe("esp32/test/publish", (topic, message) {
           print("Received message on $topic: $message");
         });
+        
+        _mqttClient.subscribe("esp32/aht21/data", (topic, message) {
+          print("Received sensor data on $topic: $message");
+        });
+      } else {
+        // Show failure dialog
+        _showConnectionResultDialog(success: false, errorMessage: 'Connection failed');
       }
     } catch (e) {
       setState(() {
@@ -353,17 +348,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
         _statusMessage = '❌ Connection error: $e';
       });
       print('Connection error: $e');
+      
+      // Show failure dialog with error
+      _showConnectionResultDialog(success: false, errorMessage: e.toString());
     }
   }
 
   Future<void> _updateAndConnect() async {
-    if (!_isAdmin) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Only admin can modify MQTT settings!')),
-      );
-      return;
-    }
-
     setState(() {
       _statusMessage = 'Saving parameters and connecting...';
     });
@@ -424,81 +415,80 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
           )
         ],
       ),
-      drawer: _buildDrawer(), // Drawer accessible for everyone
+      drawer: _buildDrawer(),
       body: SafeArea(
         child: _isInitializing
             ? const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(),
-              SizedBox(height: 16),
-              Text('Loading MQTT configuration...'),
-            ],
-          ),
-        )
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading MQTT configuration...'),
+                  ],
+                ),
+              )
             : PageView(
-          controller: _pageviewcontroller,
-          onPageChanged: (number) {
-            setState(() {
-              _currentindex = number;
-            });
-          },
-          children: [
-            sensorTemperaturepage(
-              mqttClient: _mqttClient,
-              topic: 'esp32/test/publish',
-              clientId: _clientIdController.text,
-            ),
-            datahistorypage(),
-            temperaturechart(),
-            alarmpage(mqttClient: _mqttClient),
-            aboutpage()
-          ],
-        ),
+                controller: _pageviewcontroller,
+                onPageChanged: (number) {
+                  setState(() {
+                    _currentindex = number;
+                  });
+                },
+                children: [
+                  sensorTemperaturepage(
+                    mqttClient: _mqttClient,
+                    clientId: _clientIdController.text,
+                  ),
+                  HistoryPage(),
+                  TemperatureChart(),
+                  Rangewidget(mqttClient: _mqttClient, clientId: _clientIdController.text),
+                  //alarmpage(mqttClient: _mqttClient),
+                  aboutpage()
+                ],
+              ),
       ),
       bottomNavigationBar: _isInitializing
           ? null
           : BottomNavigationBar(
-        fixedColor: Appcolors.backgroundColor,
-        currentIndex: _currentindex,
-        onTap: (int index) {
-          setState(() {
-            _pageviewcontroller.jumpToPage(index);
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(
-            backgroundColor: Colors.white,
-            icon: Icon(Icons.thermostat, color: Colors.black),
-            label: 'Temperature',
-          ),
-          BottomNavigationBarItem(
-            backgroundColor: Colors.white,
-            icon: Icon(Icons.history, color: Colors.black),
-            label: 'Data History',
-          ),
-          BottomNavigationBarItem(
-            backgroundColor: Colors.white,
-            icon: Icon(Icons.area_chart, color: Colors.black),
-            label: 'Chart',
-          ),
-          BottomNavigationBarItem(
-            backgroundColor: Colors.white,
-            icon: Icon(Icons.alarm, color: Colors.black),
-            label: 'Alarm',
-          ),
-          BottomNavigationBarItem(
-            backgroundColor: Colors.white,
-            icon: Icon(Icons.person, color: Colors.black),
-            label: 'About',
-          ),
-        ],
-      ),
+              fixedColor: Appcolors.backgroundColor,
+              currentIndex: _currentindex,
+              onTap: (int index) {
+                setState(() {
+                  _pageviewcontroller.jumpToPage(index);
+                });
+              },
+              items: const [
+                BottomNavigationBarItem(
+                  backgroundColor: Colors.white,
+                  icon: Icon(Icons.thermostat, color: Colors.black),
+                  label: 'Temperature',
+                ),
+                BottomNavigationBarItem(
+                  backgroundColor: Colors.white,
+                  icon: Icon(Icons.history, color: Colors.black),
+                  label: 'Data History',
+                ),
+                BottomNavigationBarItem(
+                  backgroundColor: Colors.white,
+                  icon: Icon(Icons.area_chart, color: Colors.black),
+                  label: 'Chart',
+                ),
+                BottomNavigationBarItem(
+                  backgroundColor: Colors.white,
+                  icon: Icon(Icons.alarm, color: Colors.black),
+                  label: 'Alarm',
+                ),
+                BottomNavigationBarItem(
+                  backgroundColor: Colors.white,
+                  icon: Icon(Icons.person, color: Colors.black),
+                  label: 'About',
+                ),
+              ],
+            ),
     );
   }
 
-  // Drawer builder for ALL users
   Widget _buildDrawer() {
     return Drawer(
       child: SingleChildScrollView(
@@ -507,19 +497,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 30),
-            // User role indicator
+            
+            // User info card
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _isAdmin ? Colors.orange.shade50 : Colors.blue.shade50,
+                color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    _isAdmin ? Icons.admin_panel_settings : Icons.person,
-                    color: _isAdmin ? Colors.orange : Colors.blue,
-                  ),
+                  Icon(Icons.person, color: Colors.blue),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -533,11 +521,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
                           ),
                         ),
                         Text(
-                          _isAdmin ? 'Administrator' : 'Standard User',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _isAdmin ? Colors.orange : Colors.blue,
-                          ),
+                          'Standard User',
+                          style: TextStyle(fontSize: 12, color: Colors.blue),
                         ),
                       ],
                     ),
@@ -560,153 +545,158 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
                 ],
               ),
             ),
+            
             const SizedBox(height: 20),
+            
             Text(
-              'MQTT Connection Setup',
+              'MQTT Configuration',
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Colors.blue[800],
               ),
             ),
+            
+            const SizedBox(height: 8),
+            
+            Text(
+              'All users can configure MQTT settings',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+            
             const SizedBox(height: 20),
 
-            // Broker URL - Read-only for non-admin
+            // Broker URL - Accessible for all users
             TextField(
               controller: _brokerController,
-              enabled: _isAdmin, // Only admin can edit
+              enabled: true, // All users can edit
               decoration: InputDecoration(
                 labelText: 'Broker URL',
+                hintText: 'e.g., broker.hivemq.com',
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(24)),
                 ),
                 prefixIcon: const Icon(Icons.cloud),
-                suffixIcon: !_isAdmin
-                    ? const Icon(Icons.lock, size: 16, color: Colors.grey)
-                    : null,
-                helperText: !_isAdmin ? 'Read-only' : null,
               ),
             ),
             const SizedBox(height: 16),
 
-            // Client ID - Read-only for non-admin
+            // Client ID - Accessible for all users
             TextField(
               controller: _clientIdController,
-              enabled: _isAdmin,
+              enabled: true, // All users can edit
               decoration: InputDecoration(
                 labelText: 'Client ID',
+                hintText: 'Unique client identifier',
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(24)),
                 ),
                 prefixIcon: const Icon(Icons.perm_identity),
-                suffixIcon: !_isAdmin
-                    ? const Icon(Icons.lock, size: 16, color: Colors.grey)
-                    : null,
-                helperText: !_isAdmin ? 'Read-only' : null,
               ),
             ),
             const SizedBox(height: 16),
 
-            // Username - Read-only for non-admin
+            // Username - Accessible for all users (default: admin)
             TextField(
               controller: _mqttUsernameController,
-              enabled: _isAdmin,
+              enabled: true, // All users can edit
               decoration: InputDecoration(
                 labelText: 'MQTT Username',
+                hintText: 'Enter username',
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(24)),
                 ),
                 prefixIcon: const Icon(Icons.person),
-                suffixIcon: !_isAdmin
-                    ? const Icon(Icons.lock, size: 16, color: Colors.grey)
-                    : null,
-                helperText: !_isAdmin ? 'Read-only' : null,
               ),
             ),
             const SizedBox(height: 16),
 
-            // Password - Read-only for non-admin
+            // Password - Accessible for all users (default: Sergioala10.)
             TextField(
               controller: _mqttPasswordController,
               obscureText: _showpass,
-              enabled: _isAdmin,
+              enabled: true, // All users can edit
               decoration: InputDecoration(
                 labelText: 'MQTT Password',
+                hintText: 'Enter password',
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(24)),
                 ),
                 prefixIcon: const Icon(Icons.lock_outline),
-                suffixIcon: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isAdmin)
-                      IconButton(
-                        onPressed: () {
-                          setState(() {
-                            _showpass = !_showpass;
-                          });
-                        },
-                        icon: Icon(_showpass ? Icons.visibility_off : Icons.visibility),
-                      ),
-                    if (!_isAdmin)
-                      const Icon(Icons.lock, size: 16, color: Colors.grey),
-                  ],
+                suffixIcon: IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _showpass = !_showpass;
+                    });
+                  },
+                  icon: Icon(_showpass ? Icons.visibility_off : Icons.visibility),
                 ),
-                helperText: !_isAdmin ? 'Read-only' : null,
               ),
             ),
             const SizedBox(height: 16),
 
-            // SSL Toggle - Disabled for non-admin
+            // SSL Toggle
             SwitchListTile(
               title: const Text("Use SSL (Secure Connection)"),
+              subtitle: Text(
+                _useSSL ? "Port 8883" : "Port 1883",
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
               value: _useSSL,
-              onChanged: _isAdmin
-                  ? (value) {
+              onChanged: (value) {
                 setState(() {
                   _useSSL = value;
+                  _statusMessage = _useSSL 
+                    ? '⚠️ SSL enabled - make sure your broker supports SSL on port 8883'
+                    : 'ℹ️ SSL disabled - using standard port 1883';
                 });
-              }
-                  : null,
-              secondary: !_isAdmin
-                  ? const Icon(Icons.lock, size: 16, color: Colors.grey)
-                  : null,
+              },
+              activeColor: Colors.blue,
             ),
+            
             const SizedBox(height: 16),
 
-            // Connect Button - Only visible for admin
-            if (_isAdmin)
+            // Connect Button
+            ElevatedButton(
+              onPressed: _isConnecting ? null : _updateAndConnect,
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 50),
+                backgroundColor: Colors.blue[600],
+                foregroundColor: Colors.white,
+              ),
+              child: _isConnecting
+                  ? SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(_isConnected ? 'RECONNECT' : 'CONNECT'),
+            ),
+
+            if (_isConnected) ...[
+              const SizedBox(height: 12),
               ElevatedButton(
-                onPressed: (_isConnecting || !_isAdmin) ? null : _updateAndConnect,
+                onPressed: () {
+                  _mqttClient.disconnect();
+                  setState(() {
+                    _isConnected = false;
+                    _statusMessage = '🔌 Disconnected from broker';
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Disconnected from MQTT broker')),
+                  );
+                },
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: Colors.blue[600],
+                  backgroundColor: Colors.red[600],
+                  foregroundColor: Colors.white,
                 ),
-                child: _isConnecting
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('CONNECT & SAVE'),
+                child: const Text('DISCONNECT'),
               ),
-
-            if (!_isAdmin)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.info_outline, size: 20, color: Colors.grey),
-                    SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Settings are read-only. Contact admin to modify MQTT configuration.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            ],
 
             const SizedBox(height: 20),
 
@@ -720,15 +710,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
                     ? Colors.red.shade50
                     : _statusMessage.contains('⚠️')
                     ? Colors.orange.shade50
-                    : Appcolors.backgroundColor,
+                    : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: _statusMessage.contains('✅')
                       ? Colors.green.shade200
                       : _statusMessage.contains('❌')
                       ? Colors.red.shade200
-                      : _statusMessage.contains('⚠️')
-                      ? Colors.orange.shade200
                       : Colors.grey.shade300,
                 ),
               ),
@@ -755,80 +743,37 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
                   Expanded(
                     child: Text(
                       _statusMessage,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: _statusMessage.contains('✅')
-                            ? Colors.green.shade800
-                            : _statusMessage.contains('❌')
-                            ? Colors.red.shade800
-                            : _statusMessage.contains('⚠️')
-                            ? Colors.orange.shade800
-                            : Colors.black,
-                      ),
+                      style: TextStyle(fontSize: 13),
                     ),
                   ),
                 ],
               ),
             ),
+
             const SizedBox(height: 20),
 
-            // Save Parameters Button - Only for admin
-            if (_isAdmin)
-              ElevatedButton(
-                onPressed: _isAdmin ? _saveParametersToFirestore : null,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: Colors.green[600],
-                ),
-                child: const Text('SAVE PARAMETERS ONLY'),
-              ),
-
-            // View Messages Button (for all users)
+            // Save Configuration Button
             ElevatedButton(
-              onPressed: _isConnected
-                  ? () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => MessagesScreen(
-                      mqttClient: _mqttClient,
-                      topic: 'esp32/test/publish',
-                      clientId: _clientIdController.text,
-                    ),
-                  ),
-                );
-              }
-                  : null,
+              onPressed: _saveParametersToFirestore,
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 50),
-                backgroundColor: Colors.orange[600],
+                backgroundColor: Colors.green[600],
+                foregroundColor: Colors.white,
               ),
-              child: const Text('VIEW MESSAGES'),
+              child: const Text('SAVE CONFIGURATION'),
             ),
 
-            // Admin Panel Button - Only for admin
-            if (_isAdmin)
-              ElevatedButton(
-                onPressed: () {
-
-                },
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: Colors.purple[600],
-                ),
-                child: const Text('ADMIN PANEL'),
-              ),
             const SizedBox(height: 20),
-
-            // Display saved config
-            const Divider(),
+            Divider(),
             const SizedBox(height: 10),
+
+            // Saved Configuration Display
             const Text(
               'Saved Configuration:',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             const SizedBox(height: 10),
-            if (_config != null) ...[
+            if (_config != null)
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -840,7 +785,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
                   children: [
                     Text('📡 Broker: ${_config!.brokerUrl}'),
                     const SizedBox(height: 4),
-                    Text('👤 Username: ${_config!.username}'),
+                    Text('👤 Username: ${_config!.username?.isEmpty ?? true ? "admin" : _config!.username}'),
                     const SizedBox(height: 4),
                     Text('🆔 Client ID: ${_config!.clientid}'),
                     const SizedBox(height: 4),
@@ -862,8 +807,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> with TickerProvider
                     ],
                   ],
                 ),
-              ),
-            ] else
+              )
+            else
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(

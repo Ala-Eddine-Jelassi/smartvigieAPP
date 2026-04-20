@@ -18,19 +18,19 @@ class MQTTClientWrapper {
   bool _alertShown = false;
   Function? showAlert;
 
-  // 🔐 AUTH VARIABLES
+  // Auth variables
   String? _username;
   String? _password;
 
   // ================= INITIALIZE WITH AUTH =================
   void initialize(
-      String server,
-      String clientId,
-      int port, {
-        String? username,
-        String? password,
-        bool useSSL = false,
-      }) {
+    String server,
+    String clientId,
+    int port, {
+    String? username,
+    String? password,
+    bool useSSL = false,
+  }) {
     client = MqttServerClient(server, clientId);
 
     client.port = port;
@@ -42,17 +42,17 @@ class MQTTClientWrapper {
     client.onSubscribed = onSubscribed;
     client.pongCallback = pong;
 
-    // 🔐 STORE AUTH
+    // Store auth
     _username = username;
     _password = password;
 
-    // 🔐 SSL SUPPORT (optional)
+    // SSL support (optional)
     if (useSSL) {
       client.secure = true;
       client.securityContext = SecurityContext.defaultContext;
     }
 
-    // 🔐 BUILD CONNECTION MESSAGE
+    // Build connection message
     final connMessage = MqttConnectMessage()
         .withClientIdentifier(clientId)
         .withWillTopic('willtopic')
@@ -60,7 +60,7 @@ class MQTTClientWrapper {
         .startClean()
         .withWillQos(MqttQos.atLeastOnce);
 
-    // 🔐 ADD AUTHENTICATION IF PROVIDED
+    // Add authentication if provided
     if (_username != null &&
         _password != null &&
         _username!.isNotEmpty &&
@@ -80,15 +80,14 @@ class MQTTClientWrapper {
     } on NoConnectionException catch (e) {
       print('Client exception: $e');
       client.disconnect();
-     _autoReconnect();
+      _autoReconnect();
     } on SocketException catch (e) {
       print('Socket exception: $e');
       client.disconnect();
       _autoReconnect();
     }
 
-    if (client.connectionStatus?.state ==
-        MqttConnectionState.connected) {
+    if (client.connectionStatus?.state == MqttConnectionState.connected) {
       isConnected = true;
       _reconnectAttempts = 0;
       _alertShown = false;
@@ -142,68 +141,76 @@ class MQTTClientWrapper {
 
   // ================= SUBSCRIBE =================
   void subscribe(
-      String topic,
-      void Function(String clientId, String message) messageHandler) {
+    String topic,
+    void Function(String clientId, String message) messageHandler,
+  ) {
     if (isConnected) {
       this.topic = topic;
-      client.subscribe(topic, MqttQos.atMostOnce);
-      client.updates?.listen(
-              (List<MqttReceivedMessage<MqttMessage?>>? messages) {
-            final recMess =
-            messages![0].payload as MqttPublishMessage;
+      client.subscribe(topic, MqttQos.atLeastOnce);
+      client.updates?.listen((
+        List<MqttReceivedMessage<MqttMessage?>>? messages,
+      ) {
+        final recMess = messages![0].payload as MqttPublishMessage;
 
-            final payload = MqttPublishPayload
-                .bytesToStringAsString(recMess.payload.message);
+        final payload = MqttPublishPayload.bytesToStringAsString(
+          recMess.payload.message,
+        );
 
-            final parts = payload.split(':');
+        final parts = payload.split(':');
 
-            if (parts.length >= 2) {
-              final senderClientId = parts[0];
-              final message = parts.sublist(1).join(':');
-              messageHandler(senderClientId, message);
-            } else {
-              messageHandler('Unknown', payload);
-            }
-          });
+        if (parts.length >= 2) {
+          final senderClientId = parts[0];
+          final message = parts.sublist(1).join(':');
+          messageHandler(senderClientId, message);
+        } else {
+          messageHandler('Unknown', payload);
+        }
+      });
     }
   }
 
-  // ================= PUBLISH =================
   // ================= PUBLISH TO SPECIFIC TOPIC =================
-  void publishToTopic(String message, String targetTopic) {
+  bool publishToTopic(String message, String targetTopic) {
     if (isConnected) {
       final builder = MqttClientPayloadBuilder();
       builder.addString(message);
-      client.publishMessage(targetTopic, MqttQos.atMostOnce, builder.payload!);
+      client.publishMessage(targetTopic, MqttQos.atLeastOnce, builder.payload!);
       print('Published message to topic: $targetTopic');
+      return true;
     } else {
       print('Cannot publish: MQTT not connected');
+      return false;
     }
   }
 
-// ================= PUBLISH TO SUBSCRIBED TOPIC WITH CLIENT ID =================
+  // ================= PUBLISH TO SUBSCRIBED TOPIC WITH CLIENT ID =================
   void publish(String message, String clientId) {
     if (isConnected) {
       final builder = MqttClientPayloadBuilder();
       builder.addString('$clientId:$message');
-      client.publishMessage(topic, MqttQos.atMostOnce, builder.payload!);
+      client.publishMessage(topic, MqttQos.atLeastOnce, builder.payload!);
       print('Published message to subscribed topic: $topic');
     } else {
       print('Cannot publish: MQTT not connected');
     }
-
   }
+
   // ================= UNSUBSCRIBE =================
   void unsubscribe() {
-    if (isConnected && isSubscribed) {
+    if (isConnected && isSubscribed && topic.isNotEmpty) {
       client.unsubscribe(topic);
       isSubscribed = false;
+      print('Unsubscribed from $topic');
     }
   }
 
   // ================= DISCONNECT =================
   void disconnect() {
     unsubscribe();
-    client.disconnect();
+    if (isConnected) {
+      client.disconnect();
+      isConnected = false;
+      print('Disconnected from MQTT broker');
+    }
   }
 }
